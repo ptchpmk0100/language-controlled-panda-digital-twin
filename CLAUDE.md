@@ -72,7 +72,7 @@ exported). Handoffs 1–12 live in `~/Downloads/Project ROS/`; handoff 13 is
 | Step | Handoff | Capability | Status |
 |---|---|---|---|
 | 1 | `1. ROS2-ACTION-HANDOFF.md` | ROS 2 action lifecycle on a simulated joint | **published** |
-| 2 | `2. ROS2-GAZEBO-HANDOFF.md` | Gazebo bring-up, one-joint arm, `ros_gz` bridge | pending |
+| 2 | `2. ROS2-GAZEBO-HANDOFF.md` | Gazebo physics + one-joint arm joint state bridged to ROS 2 | **published** |
 | 3 | `3. ROS2-CONTROLLER-HANDOFF.md` | Controller-backed action server (MultiThreadedExecutor) | pending |
 | 4 | `4. ROS2-PANDA-HANDOFF.md` | Panda URDF + `ros2_control` | pending |
 | 5 | `5. ROS2-PANDA-HANDOFF.md` | — confirm from handoff | pending |
