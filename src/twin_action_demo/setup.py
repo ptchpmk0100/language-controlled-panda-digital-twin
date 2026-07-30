@@ -27,6 +27,7 @@ setup(
     entry_points={
         'console_scripts': [
             'move_joint_server = twin_action_demo.move_joint_server:main',
+            'move_joint_client = twin_action_demo.move_joint_client:main',
         ],
     },
 )
