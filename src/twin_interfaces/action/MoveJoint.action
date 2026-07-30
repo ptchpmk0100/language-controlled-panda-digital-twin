@@ -1,0 +1,10 @@
+# Goal: command the joint to a target angle (radians)
+float64 target_angle
+---
+# Result: reported once, when motion finishes
+bool success
+float64 final_angle
+---
+# Feedback: streamed continuously while moving
+float64 current_angle
+float64 remaining
