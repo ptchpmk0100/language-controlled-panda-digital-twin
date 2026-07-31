@@ -1,0 +1,18 @@
+# Command all seven Panda arm joints at once.
+#
+# Arrays rather than seven named fields: the shape then matches
+# sensor_msgs/JointState.position, and adding or removing a joint is a
+# configuration change rather than an interface change. The cost is that
+# length and ordering become the caller's responsibility, so the server
+# validates both.
+
+# Goal: one target angle per joint, in radians, ordered panda_joint1..7.
+float64[] target_angles
+---
+# Result: reported once, when the motion finishes.
+bool success
+float64[] final_angles
+---
+# Feedback: streamed while moving. Both arrays are ordered like the goal.
+float64[] current_angles
+float64[] remaining
