@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
 
+import argparse
 from typing import Optional
 
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.utilities import remove_ros_args
 
 from twin_interfaces.action import MoveJoint
+
+DEFAULT_TARGET_ANGLE = 1.57
 
 
 class MoveJointClient(Node):
     """Send one joint-angle goal and report feedback and result."""
 
-    def __init__(self) -> None:
+    def __init__(self, target_angle: float = DEFAULT_TARGET_ANGLE) -> None:
         super().__init__('move_joint_client')
 
-        self.declare_parameter('target_angle', 1.57)
+        # Declared with the command-line value as its default, so
+        # `--ros-args -p target_angle:=X` still overrides it.
+        self.declare_parameter('target_angle', target_angle)
 
         self._action_client = ActionClient(
             self,
@@ -125,13 +131,39 @@ class MoveJointClient(Node):
         self.done = True
 
 
+def parse_arguments(args=None) -> argparse.Namespace:
+    """
+    Parse this node's own arguments from the non-ROS command line.
+
+    ``ros2 run`` appends ROS arguments such as ``--ros-args``; passing the raw
+    command line to argparse makes them look like unrecognised options, so they
+    are stripped first.
+    """
+    parser = argparse.ArgumentParser(
+        description='Send a single MoveJoint goal.'
+    )
+    parser.add_argument(
+        'target_angle',
+        type=float,
+        nargs='?',
+        default=DEFAULT_TARGET_ANGLE,
+        help=(
+            'Target joint angle in radians '
+            f'(default: {DEFAULT_TARGET_ANGLE}).'
+        ),
+    )
+    return parser.parse_args(remove_ros_args(args)[1:])
+
+
 def main(args=None) -> None:
     rclpy.init(args=args)
+
+    parsed = parse_arguments(args)
 
     node: Optional[MoveJointClient] = None
 
     try:
-        node = MoveJointClient()
+        node = MoveJointClient(target_angle=parsed.target_angle)
         node.send_goal()
 
         while rclpy.ok() and not node.done:
