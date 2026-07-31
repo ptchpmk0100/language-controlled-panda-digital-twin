@@ -1,0 +1,10 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: twin_description
+    relative_path: urdf/panda.urdf
+  srdf:
+    relative_path: config/panda.srdf
+  package_settings:
+    author_name: Khoi
+    author_email: 59853829+ptchpmk0100@users.noreply.github.com
+    generated_timestamp: 1785404990
