@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>twin_action_demo</name>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
   <description>ROS 2 action client/server foundation for the manipulator digital twin.</description>
   <maintainer email="59853829+ptchpmk0100@users.noreply.github.com">Khoi Minh Pham</maintainer>
   <license>Apache-2.0</license>

@@ -7,7 +7,7 @@ package_name = 'twin_action_demo'
 
 setup(
     name=package_name,
-    version='0.2.0',
+    version='0.3.0',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -17,6 +17,11 @@ setup(
         # have to be installed explicitly.
         (os.path.join('share', package_name, 'launch'),
             glob('launch/*.launch.py')),
+        # An ament_python package installs no data files by default, so
+        # without this the launch file's share-directory lookup resolves to a
+        # path that does not exist.
+        (os.path.join('share', package_name, 'config'),
+            glob('config/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -35,6 +40,7 @@ setup(
         'console_scripts': [
             'move_joint_server = twin_action_demo.move_joint_server:main',
             'move_joint_client = twin_action_demo.move_joint_client:main',
+            'move_arm_server = twin_action_demo.move_arm_server:main',
         ],
     },
 )
