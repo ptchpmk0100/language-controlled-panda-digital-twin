@@ -12,11 +12,14 @@ from launch import LaunchDescription
 from launch.actions import (
     AppendEnvironmentVariable,
     IncludeLaunchDescription,
+    RegisterEventHandler,
     SetEnvironmentVariable,
 )
+from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
+from launch.substitutions import Command, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 # Gazebo ships inside the ROS tree as `-vendor` packages rather than on the
@@ -58,6 +61,22 @@ def generate_launch_description():
         'panda.urdf',
     ])
 
+    # Required, not cosmetic. gz_ros2_control reads the robot description off
+    # the /robot_description topic to initialise its hardware interface; with
+    # no publisher, the controller_manager waits on that topic forever and the
+    # spawners never find a manager to talk to.
+    # `cat` because this is plain URDF; an xacro source would use `xacro` here.
+    robot_state_publisher = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        parameters=[{
+            'robot_description': ParameterValue(
+                Command(['cat ', urdf_path]), value_type=str
+            ),
+        }],
+        output='screen',
+    )
+
     spawn = Node(
         package='ros_gz_sim',
         executable='create',
@@ -68,6 +87,39 @@ def generate_launch_description():
             '-z', '0.0',
         ],
         output='screen',
+    )
+
+    # Controllers are registered in the YAML but not started by it. A spawner
+    # loads and activates each one, and it can only do that once the manager
+    # exists inside the running simulation. Chaining on process exit sequences
+    # them instead of racing: spawn finishes, then the broadcaster, then the
+    # position controller.
+    joint_state_broadcaster_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['joint_state_broadcaster'],
+        output='screen',
+    )
+
+    position_controller_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['joint_position_controller'],
+        output='screen',
+    )
+
+    broadcaster_after_spawn = RegisterEventHandler(
+        OnProcessExit(
+            target_action=spawn,
+            on_exit=[joint_state_broadcaster_spawner],
+        )
+    )
+
+    controller_after_broadcaster = RegisterEventHandler(
+        OnProcessExit(
+            target_action=joint_state_broadcaster_spawner,
+            on_exit=[position_controller_spawner],
+        )
     )
 
     # Included rather than duplicated, so the bridge stays independently
@@ -88,6 +140,9 @@ def generate_launch_description():
         append_library_path,
         append_path,
         gz_sim,
+        robot_state_publisher,
         spawn,
+        broadcaster_after_spawn,
+        controller_after_broadcaster,
         bridge,
     ])
