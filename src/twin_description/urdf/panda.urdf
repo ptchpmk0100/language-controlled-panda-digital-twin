@@ -306,4 +306,116 @@
     <mimic joint="panda_finger_joint1"/>
     <dynamics damping="0.3"/>
   </joint>
+
+  <!-- ============ GAZEBO PLUGINS ============ -->
+  <!-- Two plugin kinds with different multiplicities, which is the thing to
+       get right here:
+
+         JointPositionController  PER JOINT  - one instance per actuated joint,
+                                              each with its own command topic.
+         JointStatePublisher      PER MODEL  - exactly one, reporting every
+                                              joint in the model.
+
+       Seven controllers and one publisher, not eight matched pairs.
+
+       Each controller runs a PID loop driving its joint towards the last value
+       received on its topic. The topic carries a gz.msgs.Double in radians,
+       which ros_gz_bridge maps to std_msgs/Float64 on the ROS side.
+
+       The gripper's prismatic finger joints are deliberately left unactuated;
+       nothing in the project drives them yet. panda_joint8 is fixed and has
+       nothing to control. -->
+
+  <gazebo>
+    <plugin
+        filename="gz-sim-joint-position-controller-system"
+        name="gz::sim::systems::JointPositionController">
+      <joint_name>panda_joint1</joint_name>
+      <topic>/panda_joint1/cmd_pos</topic>
+      <p_gain>800</p_gain>
+      <i_gain>20</i_gain>
+      <d_gain>60</d_gain>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin
+        filename="gz-sim-joint-position-controller-system"
+        name="gz::sim::systems::JointPositionController">
+      <joint_name>panda_joint2</joint_name>
+      <topic>/panda_joint2/cmd_pos</topic>
+      <p_gain>800</p_gain>
+      <i_gain>20</i_gain>
+      <d_gain>60</d_gain>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin
+        filename="gz-sim-joint-position-controller-system"
+        name="gz::sim::systems::JointPositionController">
+      <joint_name>panda_joint3</joint_name>
+      <topic>/panda_joint3/cmd_pos</topic>
+      <p_gain>800</p_gain>
+      <i_gain>20</i_gain>
+      <d_gain>60</d_gain>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin
+        filename="gz-sim-joint-position-controller-system"
+        name="gz::sim::systems::JointPositionController">
+      <joint_name>panda_joint4</joint_name>
+      <topic>/panda_joint4/cmd_pos</topic>
+      <p_gain>800</p_gain>
+      <i_gain>20</i_gain>
+      <d_gain>60</d_gain>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin
+        filename="gz-sim-joint-position-controller-system"
+        name="gz::sim::systems::JointPositionController">
+      <joint_name>panda_joint5</joint_name>
+      <topic>/panda_joint5/cmd_pos</topic>
+      <p_gain>800</p_gain>
+      <i_gain>20</i_gain>
+      <d_gain>60</d_gain>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin
+        filename="gz-sim-joint-position-controller-system"
+        name="gz::sim::systems::JointPositionController">
+      <joint_name>panda_joint6</joint_name>
+      <topic>/panda_joint6/cmd_pos</topic>
+      <p_gain>800</p_gain>
+      <i_gain>20</i_gain>
+      <d_gain>60</d_gain>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin
+        filename="gz-sim-joint-position-controller-system"
+        name="gz::sim::systems::JointPositionController">
+      <joint_name>panda_joint7</joint_name>
+      <topic>/panda_joint7/cmd_pos</topic>
+      <p_gain>800</p_gain>
+      <i_gain>20</i_gain>
+      <d_gain>60</d_gain>
+    </plugin>
+  </gazebo>
+
+  <!-- One per model. No <joint_name> means "publish them all". -->
+  <gazebo>
+    <plugin
+        filename="gz-sim-joint-state-publisher-system"
+        name="gz::sim::systems::JointStatePublisher">
+    </plugin>
+  </gazebo>
+
 </robot>
