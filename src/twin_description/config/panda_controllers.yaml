@@ -10,6 +10,12 @@
 
 controller_manager:
   ros__parameters:
+    # Follow Gazebo's clock rather than the wall clock. This is per-node and
+    # defaults to false: being hosted inside the simulator does not make a node
+    # infer sim-time, it has to be told. robot_state_publisher is told
+    # separately in the launch file, because a split clock breaks TF.
+    use_sim_time: true
+
     # Hz. The rate of the control loop itself, independent of the simulator's
     # physics step.
     update_rate: 1000
@@ -18,19 +24,24 @@ controller_manager:
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
-    joint_position_controller:
-      type: position_controllers/JointGroupPositionController
+    # Named arm_controller rather than after its type: MoveIt's configuration
+    # refers to controllers by name, and this is the name that seam expects.
+    # Note the package namespace - joint_trajectory_controller, not
+    # position_controllers.
+    arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
 
 # --- per-controller configuration ---
-# No PID gains here, and none are needed. JointGroupPositionController is a
-# forward controller: it passes an array of positions straight through to the
-# position command interface, and GazeboSimSystem closes the loop internally.
-# The p=800/i=20/d=60 tuning from Step 5 is not ported because nothing in this
-# path runs a PID any more. Gains would return only on an effort or velocity
-# interface.
-joint_position_controller:
+# Still no PID gains. The trajectory controller interpolates between waypoints
+# and writes positions to the command interface; GazeboSimSystem closes the
+# loop. Gains would return only on an effort or velocity interface.
+#
+# Unlike the group position controller it replaced, the trajectory controller
+# needs its interfaces declared: it reads state to track where it is along the
+# trajectory, not just to report it.
+arm_controller:
   ros__parameters:
-    # Order matters: it defines the index order of the command array.
+    # Order defines the joint ordering the controller expects.
     joints:
       - panda_joint1
       - panda_joint2

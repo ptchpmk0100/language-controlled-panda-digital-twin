@@ -55,6 +55,21 @@ def generate_launch_description():
         launch_arguments={'gz_args': 'empty.sdf -r'}.items(),
     )
 
+    # Gazebo keeps simulation time internally and does not publish it to ROS.
+    # A bridge has to carry it across, and without one /clock has zero
+    # publishers and every use_sim_time node waits forever for a clock that
+    # never arrives. '[' is the gz-to-ROS direction: the simulator owns time.
+    #
+    # Deliberately separate from bridge.launch.py, which is vestigial under
+    # ros2_control, so that deleting it later stays a clean delete with nothing
+    # load-bearing hidden inside.
+    clock_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
+        output='screen',
+    )
+
     urdf_path = PathJoinSubstitution([
         FindPackageShare('twin_description'),
         'urdf',
@@ -69,11 +84,16 @@ def generate_launch_description():
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        parameters=[{
-            'robot_description': ParameterValue(
-                Command(['cat ', urdf_path]), value_type=str
-            ),
-        }],
+        parameters=[
+            {
+                'robot_description': ParameterValue(
+                    Command(['cat ', urdf_path]), value_type=str
+                ),
+            },
+            # Must match the controller manager. A split clock - one node on
+            # sim-time, the other on wall-clock - desynchronises TF.
+            {'use_sim_time': True},
+        ],
         output='screen',
     )
 
@@ -101,10 +121,10 @@ def generate_launch_description():
         output='screen',
     )
 
-    position_controller_spawner = Node(
+    arm_controller_spawner = Node(
         package='controller_manager',
         executable='spawner',
-        arguments=['joint_position_controller'],
+        arguments=['arm_controller'],
         output='screen',
     )
 
@@ -115,10 +135,10 @@ def generate_launch_description():
         )
     )
 
-    controller_after_broadcaster = RegisterEventHandler(
+    arm_controller_after_broadcaster = RegisterEventHandler(
         OnProcessExit(
             target_action=joint_state_broadcaster_spawner,
-            on_exit=[position_controller_spawner],
+            on_exit=[arm_controller_spawner],
         )
     )
 
@@ -140,9 +160,10 @@ def generate_launch_description():
         append_library_path,
         append_path,
         gz_sim,
+        clock_bridge,
         robot_state_publisher,
         spawn,
         broadcaster_after_spawn,
-        controller_after_broadcaster,
+        arm_controller_after_broadcaster,
         bridge,
     ])
