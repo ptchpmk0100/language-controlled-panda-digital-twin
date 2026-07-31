@@ -4,14 +4,11 @@ An incremental ROS 2 robotics project whose end goal is a simulation-only
 Franka Panda manipulator that executes validated natural-language
 pick-and-place commands in Gazebo.
 
-> **Current status:** actuated simulation, no autonomy yet. The real 7-DOF Panda
-> spawns into Gazebo with valid physics, is anchored to the world, and holds or
-> tracks a position command on every arm joint. On a one-joint stand-in, the full
-> loop is closed end to end: a ROS 2 action goal drives the joint through a PID
-> controller and reports the *measured* angle back as feedback, brought up by a
-> single launch file. The Panda does not yet have a ROS-side command path, and the
-> repository contains no MoveIt planning, perception, or language-model
-> integration.
+> **Current status:** a commandable simulated arm, no autonomy yet. One launch
+> command brings up Gazebo, the 7-DOF Panda, and the ROS 2 control stack, with
+> both controllers activated automatically. Commanded joint angles are tracked to
+> within about 1e-13 rad. The repository contains no MoveIt planning, no
+> trajectory execution, no perception, and no language-model integration.
 
 ## Milestones
 
@@ -22,10 +19,47 @@ pick-and-place commands in Gazebo.
 | 3 | Closed loop: the action commands the joint, measured state is the feedback | [Step 3](docs/learning/step-03-joint-controller.md) |
 | 4 | The real 7-DOF Panda spawns with valid physics, anchored to the world | [Step 4](docs/learning/step-04-panda-spawn.md) |
 | 5 | All seven Panda arm joints hold pose and track a commanded angle | [Step 5](docs/learning/step-05-panda-controllers.md) |
+| 6 | One-command bringup, a YAML-configured bridge, and a seven-joint action | [Step 6](docs/learning/step-06-panda-bringup.md) |
+| 7 | Rearchitected onto `ros2_control`, the interface MoveIt expects | [Step 7](docs/learning/step-07-ros2-control.md) |
 
 The one-joint arm is a deliberate stand-in. Steps 2 and 3 proved the
 description → physics → bridge → action pipeline on the smallest robot that could
-exercise it; Steps 4 and 5 point that same pipeline at the real arm.
+exercise it; Steps 4 onward point that same pipeline at the real arm.
+
+## Step 7: The `ros2_control` stack
+
+Seven bespoke Gazebo controller plugins were replaced by the standard control
+stack. Three declarations, three jobs:
+
+| Where | What it says |
+|---|---|
+| `<ros2_control>` in the URDF | The **contract** — which joints exist, what can be commanded and read |
+| `<gazebo>` system plugin | The **runtime** providing those interfaces inside the simulator |
+| `panda_controllers.yaml` | The **controllers** to make available, and their configuration |
+
+Controllers are registered by the YAML but started by a spawner, so an empty
+`ros2 control list_controllers` before spawning is expected rather than a fault.
+Commanded angles now track to within 1e-13 rad, against roughly 0.02 rad for the
+per-joint PID it replaced. See
+[Step 7: ros2_control](docs/learning/step-07-ros2-control.md).
+
+## Step 6: One-command bringup
+
+The bridge became a YAML table of eight topic mappings, and the whole twin now
+starts from a single command with no environment sourcing and no clicking play:
+
+```text
+ros2 launch twin_action_demo panda_bringup.launch.py
+  → Gazebo environment set inside launch
+  → Gazebo started with '-r' (already running)
+  → Panda spawned
+  → bridge.launch.py included
+```
+
+This step also added `MoveArm`, a seven-joint action carrying arrays so the shape
+matches `sensor_msgs/JointState.position`. It is superseded by Step 7's control
+stack and kept for reference. See
+[Step 6: One-command bringup](docs/learning/step-06-panda-bringup.md).
 
 ## Step 5: Seven-joint position control
 
@@ -131,6 +165,8 @@ planned system and acceptance criteria are in
 - Gazebo Harmonic (Gazebo Sim 8) and `ros-jazzy-ros-gz` — required from Step 2
 - `ros-jazzy-moveit-resources-panda-description` — required from Step 4, for the
   Panda's meshes
+- `ros-jazzy-gz-ros2-control`, `ros-jazzy-ros2-controllers`, and
+  `ros-jazzy-robot-state-publisher` — required from Step 7
 
 Gazebo is installed through ROS `-vendor` packages, which place it inside the ROS
 tree rather than on the system `PATH`. Sourcing ROS does **not** configure it. A
@@ -187,33 +223,36 @@ a target outside ±3.14 rad:
 ros2 run twin_action_demo move_joint_client 5.0      # rejected before motion
 ```
 
-### Panda (Steps 4–5)
+### Panda (Steps 4–7)
 
-The Panda has no launch file or ROS-side command path yet — that is the next step.
-Spawn it directly, with an **absolute** `-file` path, because the path is resolved
-by the already-running simulator rather than by your shell:
-
-```bash
-gz sim empty.sdf          # press play
-ros2 run ros_gz_sim create -world empty -name panda -z 0.0 \
-  -file "$(ros2 pkg prefix twin_description)/share/twin_description/urdf/panda.urdf"
-```
-
-All seven joints hold the spawn pose. Command one directly over gz transport,
-which proves the controllers without involving a bridge at all:
+One command, from a plain shell. Do **not** source the Gazebo environment first —
+the launch file sets it, starts the simulator already running, spawns the robot,
+and activates both controllers:
 
 ```bash
-gz topic -l | grep cmd_pos                                    # expect seven
-gz topic -t /panda_joint4/cmd_pos -m gz.msgs.Double -p 'data: -1.5'
+ros2 launch twin_action_demo panda_bringup.launch.py
 ```
 
-To read the joints back in ROS 2, bridge the model's state topic:
+Confirm the control stack came up:
 
 ```bash
-ros2 run ros_gz_bridge parameter_bridge \
-  "/world/empty/model/panda/joint_state@sensor_msgs/msg/JointState[gz.msgs.Model"
-ros2 topic echo /world/empty/model/panda/joint_state
+ros2 control list_controllers
+#   joint_position_controller  ... active
+#   joint_state_broadcaster    ... active
+ros2 control list_hardware_interfaces      # 7 position interfaces, all claimed
 ```
+
+Command the arm with one position per joint, ordered `panda_joint1..7`, and read
+the result back by joint name:
+
+```bash
+ros2 topic pub --once /joint_position_controller/commands \
+  std_msgs/msg/Float64MultiArray "{data: [0.0, -0.5, 0.0, -1.5, 0.0, 1.0, 0.5]}"
+ros2 topic echo /joint_states --once
+```
+
+The commanded array order is defined by the `joints:` list in
+`twin_description/config/panda_controllers.yaml`.
 
 ## Test
 
@@ -236,46 +275,59 @@ Validated on ROS 2 Jazzy and Gazebo Sim 8 (11 tests, 0 failures, 1 skipped):
   unchanged at `[0 0 0]` after five seconds of stepping physics;
 - Panda joints hold the zero spawn pose instead of folding — five of seven within
   0.005 rad, wrist joints 5 and 7 within 0.072 rad — and track commands to within
-  0.03 rad, with no drift across repeated samples at rest.
+  0.03 rad, with no drift across repeated samples at rest;
+- one-command bringup from a plain shell with `gz_env.sh` unsourced: all eight
+  bridge mappings created, and a seven-joint `MoveArm` goal returned success while
+  a three-angle goal was rejected before any motion;
+- under `ros2_control`: both controllers report `active`, all seven position
+  command interfaces are claimed, and a commanded array is tracked to between
+  1.9e-19 and 7.1e-13 rad per joint with velocities at numerical zero.
 
 ## Known limitations
 
-**The Panda cannot be commanded from ROS 2.** Its joints are driven over gz
-transport only. The seven-way bridge and an action server that publishes seven
-targets and reports seven-joint feedback are the next step; until then, only the
-one-joint arm has a closed ROS-side loop.
+**Exact tracking probably means kinematic, not dynamic.** Errors of 1e-13 rad are
+not evidence of a better controller; they indicate the position command reaches
+the joint more or less directly rather than through a force-producing loop.
+Nothing has been tested against contact or payload, and this should be confirmed
+before treating the simulation as physically faithful.
 
-**Wrist joints hold less accurately than the inner joints.** `panda_joint5` and
-`panda_joint7` settle with roughly 0.05–0.07 rad of offset, against under 0.005 rad
-for most of the arm. They have a 12 N·m effort limit rather than 87 N·m and carry
-the welded hand mass.
+**Motion is untimed.** `Float64MultiArray` says where to go, not how or how fast.
+There is no trajectory controller, so the path between two poses is whatever the
+hardware interface does. MoveIt drives a `JointTrajectoryController`, which does
+not exist here yet.
 
-**Gains are baked into the descriptions**, so every tuning change costs an edit and
-a `colcon build`. Externalising them into YAML is one of the reasons the roadmap
-moves to `ros2_control`.
+**`use_sim_time` is unset**, so the controller manager logs `No clock received,
+using time argument instead!`. Benign for untimed position commands, but it must
+be fixed before timestamped trajectories.
+
+**Two components are superseded but still present.** The `ros_gz` bridge still
+starts and maps topics that no longer exist under `ros2_control`, and the `MoveArm`
+action server publishes to those same dead topics. Both are harmless, both are
+dead, and neither is wired into the current pipeline.
 
 **The Panda description is generated and then hand-edited.** It is produced by
-expanding the upstream xacro, after which the world anchor and the plugin blocks
-are added by hand; re-running `xacro` discards them. The file header records the
-command and the hazard.
+expanding the upstream xacro, after which the world anchor and the `ros2_control`
+blocks are added by hand; re-running `xacro` discards them. The file header records
+the command and the hazard.
 
 **The Panda's mesh paths are absolute** into `/opt/ros/jazzy/...`, so the
 description assumes a Jazzy install at the default prefix rather than being
-portable across machines.
+portable across machines. The controllers-YAML path is *not* affected: it is
+substituted by CMake at configure time from `panda.urdf.in`.
 
-**Motion is uncoordinated and unchecked.** The seven joints take independent scalar
-setpoints; nothing sequences them into a synchronised trajectory, and nothing
-enforces joint limits before a command is published. Self-collision is off, which
-is the Gazebo default and intentional — inter-link collision belongs at the
-planning layer, which arrives with MoveIt.
+**The gripper is outside the contract.** Only the seven arm joints appear in
+`<ros2_control>`, so the fingers have no interfaces and are not reported by the
+broadcaster. Their URDF mimic constraint is also unsupported by the DART physics
+engine.
 
-**The gripper is inert.** Its mimic constraint is unsupported by the DART physics
-engine, and nothing drives the fingers.
+**Nothing enforces joint limits** before a command is published to the controller,
+and self-collision is off — the Gazebo default, and intentional, since inter-link
+collision belongs at the planning layer that arrives with MoveIt.
 
 **Cancellation is reachable but untested.** Step 3 replaced the single-threaded
 executor with a `MultiThreadedExecutor` and a `ReentrantCallbackGroup`, so a cancel
-request can now be serviced while a goal is executing — but no automated test
-covers it.
+request can be serviced while a goal is executing — but no automated test covers
+it.
 
 ## Repository layout
 
@@ -285,10 +337,15 @@ covers it.
 │   ├── PROJECT-SPEC.md
 │   └── learning/            one entry per milestone, step-01 … step-05
 └── src/
-    ├── twin_interfaces/     MoveJoint action definition (ament_cmake)
-    ├── twin_action_demo/    action server, client, and bringup launch file
-    └── twin_description/    one_joint_arm.urdf and panda.urdf
+    ├── twin_interfaces/     MoveJoint and MoveArm action definitions
+    ├── twin_action_demo/    action servers, client, launch files, bridge config
+    └── twin_description/    URDF models and the controllers YAML
 ```
+
+`twin_description` holds data and stays launch-free; everything that starts a
+process lives in `twin_action_demo`. The Panda description is committed as
+`panda.urdf.in` because CMake substitutes the controllers-YAML path into it at
+configure time — see [Step 7](docs/learning/step-07-ros2-control.md).
 
 ## Development
 
