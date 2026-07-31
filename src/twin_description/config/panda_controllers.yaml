@@ -1,0 +1,46 @@
+# Controller configuration, loaded by the controller_manager that
+# gz_ros2_control starts inside the simulator.
+#
+# Two logical sections: a registry naming each controller and its type, then
+# per-controller configuration keyed by those same names.
+#
+# Naming a controller here does NOT start it. A spawner has to load and
+# activate it, which is why `ros2 control list_controllers` is empty until the
+# spawners in panda_bringup.launch.py have run.
+
+controller_manager:
+  ros__parameters:
+    # Hz. The rate of the control loop itself, independent of the simulator's
+    # physics step.
+    update_rate: 1000
+
+    # --- registry: name -> type ---
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    joint_position_controller:
+      type: position_controllers/JointGroupPositionController
+
+# --- per-controller configuration ---
+# No PID gains here, and none are needed. JointGroupPositionController is a
+# forward controller: it passes an array of positions straight through to the
+# position command interface, and GazeboSimSystem closes the loop internally.
+# The p=800/i=20/d=60 tuning from Step 5 is not ported because nothing in this
+# path runs a PID any more. Gains would return only on an effort or velocity
+# interface.
+joint_position_controller:
+  ros__parameters:
+    # Order matters: it defines the index order of the command array.
+    joints:
+      - panda_joint1
+      - panda_joint2
+      - panda_joint3
+      - panda_joint4
+      - panda_joint5
+      - panda_joint6
+      - panda_joint7
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity

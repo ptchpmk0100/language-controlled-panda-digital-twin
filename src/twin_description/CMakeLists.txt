@@ -23,12 +23,34 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-# Copy urdf/ into the install space. Without this, ROS tools that resolve paths
-# through the package share directory cannot find the description, because they
-# read the install space rather than the source tree.
+# gz_ros2_control reads the <parameters> tag as a literal filesystem path. It
+# expands neither package:// nor $(find ...), and the Panda URDF is handed to
+# Gazebo as raw file contents, so there is no xacro pass to expand anything
+# either. Bake this workspace's own install path in at configure time, so a
+# fresh clone points at its own copy of panda_controllers.yaml rather than at
+# the tree it was copied from.
+set(TWIN_CONTROLLERS_YAML
+  "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config/panda_controllers.yaml")
+configure_file(
+  urdf/panda.urdf.in
+  "${CMAKE_CURRENT_BINARY_DIR}/urdf/panda.urdf"
+  @ONLY
+)
+
+# Copy urdf/ and config/ into the install space. Without this, ROS tools that
+# resolve paths through the package share directory cannot find them, because
+# they read the install space rather than the source tree.
 install(
-  DIRECTORY urdf
+  DIRECTORY urdf config
   DESTINATION share/${PROJECT_NAME}
+  PATTERN "panda.urdf.in" EXCLUDE
+)
+
+# urdf/panda.urdf.in is the source of truth; the usable URDF exists only once
+# configured, so it is installed from the build tree.
+install(
+  FILES "${CMAKE_CURRENT_BINARY_DIR}/urdf/panda.urdf"
+  DESTINATION share/${PROJECT_NAME}/urdf
 )
 
 ament_package()

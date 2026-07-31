@@ -307,114 +307,69 @@
     <dynamics damping="0.3"/>
   </joint>
 
-  <!-- ============ GAZEBO PLUGINS ============ -->
-  <!-- Two plugin kinds with different multiplicities, which is the thing to
-       get right here:
+  <!-- ============ ros2_control ============ -->
+  <!-- The interface CONTRACT: which joints exist and what can be read from or
+       written to each one. Plain URDF, not a Gazebo plugin - it declares
+       intent, and something else has to provide it. -->
+  <ros2_control name="PandaSystem" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+    <joint name="panda_joint1">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint2">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint3">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint4">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint5">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint6">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="panda_joint7">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
 
-         JointPositionController  PER JOINT  - one instance per actuated joint,
-                                              each with its own command topic.
-         JointStatePublisher      PER MODEL  - exactly one, reporting every
-                                              joint in the model.
+  <!-- The RUNTIME that provides those interfaces: one Gazebo system plugin,
+       which loads a controller_manager inside the simulator. It replaces all
+       seven JointPositionController plugins and the JointStatePublisher.
 
-       Seven controllers and one publisher, not eight matched pairs.
+       Note the two different plugin strings. Above,
+       `gz_ros2_control/GazeboSimSystem` is the hardware-interface class the
+       controller_manager loads. Here, `gz_ros2_control-system` /
+       `GazeboSimROS2ControlPlugin` is the Gazebo system library. They are
+       routinely confused; both are required and they are not interchangeable.
 
-       Each controller runs a PID loop driving its joint towards the last value
-       received on its topic. The topic carries a gz.msgs.Double in radians,
-       which ros_gz_bridge maps to std_msgs/Float64 on the ROS side.
-
-       The gripper's prismatic finger joints are deliberately left unactuated;
-       nothing in the project drives them yet. panda_joint8 is fixed and has
-       nothing to control. -->
-
+       <parameters> is read as a literal filesystem path. The URDF is handed to
+       Gazebo as raw file contents, so nothing expands $(find ...) inside it and
+       a launch substitution would arrive at the plugin verbatim. CMake bakes
+       this workspace's own install path in at configure time. -->
   <gazebo>
-    <plugin
-        filename="gz-sim-joint-position-controller-system"
-        name="gz::sim::systems::JointPositionController">
-      <joint_name>panda_joint1</joint_name>
-      <topic>/panda_joint1/cmd_pos</topic>
-      <p_gain>800</p_gain>
-      <i_gain>20</i_gain>
-      <d_gain>60</d_gain>
-    </plugin>
-  </gazebo>
-
-  <gazebo>
-    <plugin
-        filename="gz-sim-joint-position-controller-system"
-        name="gz::sim::systems::JointPositionController">
-      <joint_name>panda_joint2</joint_name>
-      <topic>/panda_joint2/cmd_pos</topic>
-      <p_gain>800</p_gain>
-      <i_gain>20</i_gain>
-      <d_gain>60</d_gain>
-    </plugin>
-  </gazebo>
-
-  <gazebo>
-    <plugin
-        filename="gz-sim-joint-position-controller-system"
-        name="gz::sim::systems::JointPositionController">
-      <joint_name>panda_joint3</joint_name>
-      <topic>/panda_joint3/cmd_pos</topic>
-      <p_gain>800</p_gain>
-      <i_gain>20</i_gain>
-      <d_gain>60</d_gain>
-    </plugin>
-  </gazebo>
-
-  <gazebo>
-    <plugin
-        filename="gz-sim-joint-position-controller-system"
-        name="gz::sim::systems::JointPositionController">
-      <joint_name>panda_joint4</joint_name>
-      <topic>/panda_joint4/cmd_pos</topic>
-      <p_gain>800</p_gain>
-      <i_gain>20</i_gain>
-      <d_gain>60</d_gain>
-    </plugin>
-  </gazebo>
-
-  <gazebo>
-    <plugin
-        filename="gz-sim-joint-position-controller-system"
-        name="gz::sim::systems::JointPositionController">
-      <joint_name>panda_joint5</joint_name>
-      <topic>/panda_joint5/cmd_pos</topic>
-      <p_gain>800</p_gain>
-      <i_gain>20</i_gain>
-      <d_gain>60</d_gain>
-    </plugin>
-  </gazebo>
-
-  <gazebo>
-    <plugin
-        filename="gz-sim-joint-position-controller-system"
-        name="gz::sim::systems::JointPositionController">
-      <joint_name>panda_joint6</joint_name>
-      <topic>/panda_joint6/cmd_pos</topic>
-      <p_gain>800</p_gain>
-      <i_gain>20</i_gain>
-      <d_gain>60</d_gain>
-    </plugin>
-  </gazebo>
-
-  <gazebo>
-    <plugin
-        filename="gz-sim-joint-position-controller-system"
-        name="gz::sim::systems::JointPositionController">
-      <joint_name>panda_joint7</joint_name>
-      <topic>/panda_joint7/cmd_pos</topic>
-      <p_gain>800</p_gain>
-      <i_gain>20</i_gain>
-      <d_gain>60</d_gain>
-    </plugin>
-  </gazebo>
-
-  <!-- One per model. No <joint_name> means "publish them all". -->
-  <gazebo>
-    <plugin
-        filename="gz-sim-joint-state-publisher-system"
-        name="gz::sim::systems::JointStatePublisher">
+    <plugin filename="gz_ros2_control-system"
+            name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>@TWIN_CONTROLLERS_YAML@</parameters>
     </plugin>
   </gazebo>
 
