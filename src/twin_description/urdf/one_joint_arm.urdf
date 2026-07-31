@@ -60,12 +60,39 @@
   <!-- ============ GAZEBO PASS-THROUGH ============ -->
   <!-- URDF parsers ignore <gazebo>; Gazebo reads it. JointStatePublisher walks
        the model's joints every simulation step and broadcasts them on a gz
-       topic, which ros_gz_bridge converts to sensor_msgs/JointState. Nothing
-       here drives the joint - the arm only falls under gravity at this stage. -->
+       topic, which ros_gz_bridge converts to sensor_msgs/JointState. This is
+       the measurement half of the loop. -->
   <gazebo>
     <plugin
         filename="gz-sim-joint-state-publisher-system"
         name="gz::sim::systems::JointStatePublisher">
+    </plugin>
+  </gazebo>
+
+  <!-- The command half of the loop. A plugin's identity is the
+       filename/name pair - which shared object, which C++ class - and the
+       child tags are only configuration handed to that class. Controller
+       configuration therefore needs its own <gazebo> block; nesting it inside
+       the publisher block above loads cleanly and does nothing.
+
+       The plugin runs a PID loop that drives joint1 towards the last value
+       received on <topic>. That topic carries a gz.msgs.Double (a scalar in
+       radians), which ros_gz_bridge maps to std_msgs/Float64 on the ROS side. -->
+  <gazebo>
+    <plugin
+        filename="gz-sim-joint-position-controller-system"
+        name="gz::sim::systems::JointPositionController">
+      <joint_name>joint1</joint_name>
+      <topic>/model/one_joint_arm/joint/joint1/cmd_pos</topic>
+      <p_gain>10.0</p_gain>
+      <i_gain>5.0</i_gain>
+      <d_gain>1.0</d_gain>
+      <!-- Integral clamp. The plugin defaults to +/-1, which is less than the
+           1.47 N.m of gravity torque this link produces at its worst pose, so
+           the integral term saturates before it can cancel the droop. Matching
+           the joint's own effort limit lets it do its job. -->
+      <i_max>10.0</i_max>
+      <i_min>-10.0</i_min>
     </plugin>
   </gazebo>
 
