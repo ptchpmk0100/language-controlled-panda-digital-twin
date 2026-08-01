@@ -41,7 +41,7 @@ configure_file(
 # resolve paths through the package share directory cannot find them, because
 # they read the install space rather than the source tree.
 install(
-  DIRECTORY urdf config
+  DIRECTORY urdf config models
   DESTINATION share/${PROJECT_NAME}
   PATTERN "panda.urdf.in" EXCLUDE
 )

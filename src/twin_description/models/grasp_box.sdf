@@ -1,0 +1,41 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <model name="grasp_box">
+    <!-- NOT static: a graspable object must be free to be held/lifted.
+         A static box would be nailed to the world and could never be picked. -->
+    <static>false</static>
+    <link name="box_link">
+      <inertial>
+        <mass>0.05</mass>   <!-- 50 g: light enough for the fingers to hold -->
+        <inertia>
+          <ixx>1.3e-05</ixx><iyy>1.3e-05</iyy><izz>1.3e-05</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <collision name="box_collision">
+        <geometry>
+          <box>
+            <!-- 0.03 m cube: fits inside the ~0.08 m finger gap with margin.
+                 THIS is where size lives -- change these three numbers, respawn.
+                 Do NOT drag the GUI scale handles; respawn with new numbers. -->
+            <size>0.03 0.03 0.03</size>
+          </box>
+        </geometry>
+        <surface>
+          <friction>
+            <ode><mu>1.0</mu><mu2>1.0</mu2></ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="box_visual">
+        <geometry>
+          <box><size>0.03 0.03 0.03</size></box>
+        </geometry>
+        <material>
+          <ambient>0.2 0.6 1.0 1</ambient>
+          <diffuse>0.2 0.6 1.0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>
