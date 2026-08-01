@@ -11,6 +11,7 @@
   <exec_depend>moveit_py</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
 
   <!-- Supplies the SRDF, kinematics and controller seam this node plans with. -->
   <exec_depend>twin_moveit_config</exec_depend>

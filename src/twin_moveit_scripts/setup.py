@@ -32,6 +32,7 @@ setup(
     entry_points={
         'console_scripts': [
             'move_to = twin_moveit_scripts.move_to:main',
+            'llm_move = twin_moveit_scripts.llm_move:main',
         ],
     },
 )
