@@ -175,6 +175,9 @@ def handle_instruction(text, robot, arm, logger, params, lock, source='repl'):
     arriving mid-move waits its turn rather than being dropped, which matches
     how the prompt already behaved. Two instructions can never drive the single
     MoveIt context at once.
+
+    Returns the primitive's MoveResult, or None if no motion ran, so a caller
+    can react to the outcome rather than reading the log.
     """
     text = text.strip()
     if not text:
@@ -192,14 +195,21 @@ def handle_instruction(text, robot, arm, logger, params, lock, source='repl'):
 
     with lock:
         if action == 'move_to_named':
-            move_to_named(robot, arm, logger, params, args['name'])
+            result = move_to_named(robot, arm, logger, params, args['name'])
         elif action == 'move_to_pose':
             safe = clamp_pose(args, logger)
-            move_to_pose(
+            result = move_to_pose(
                 robot, arm, logger, params, safe['x'], safe['y'], safe['z']
             )
         else:
             logger.error(f'[{source}] unknown action: {action}')
+            return None
+
+    if result.ok:
+        logger.info(f'[{source}] DONE: {result}')
+    else:
+        logger.error(f'[{source}] MOVE FAILED: {result}')
+    return result
 
 
 class VoiceCommandNode(Node):

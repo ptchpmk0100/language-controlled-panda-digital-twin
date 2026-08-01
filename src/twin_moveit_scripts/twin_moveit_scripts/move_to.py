@@ -15,8 +15,10 @@ The Gazebo bringup must already be running, because execution needs
 arm_controller to exist.
 """
 
+from dataclasses import dataclass
 import sys
 import time
+from typing import Optional, Tuple
 
 from geometry_msgs.msg import PoseStamped
 
@@ -44,6 +46,32 @@ EXECUTION_CLIENT_SETTLE = 2.0
 
 # Seconds. Lets the arm finish moving before anything reads its state back.
 MOTION_SETTLE = 3.0
+
+
+@dataclass
+class MoveResult:
+    """
+    What a motion primitive reports back.
+
+    Chosen over a bool, which cannot carry why or where, and over a
+    (bool, dict) tuple, whose keys are a convention that rots the first time a
+    field is added. New fields go here without touching any call site.
+
+    `stage` is the distinction anything reacting to a failure needs: a plan
+    that never existed calls for a different target, an execution that broke
+    mid-motion calls for stopping and looking.
+    """
+
+    ok: bool
+    stage: str                     # 'executed' | 'plan_failed' | 'exec_error'
+    final_pose: Optional[Tuple[float, float, float]] = None
+    error: Optional[str] = None
+
+    def __str__(self):
+        if self.ok and self.final_pose is not None:
+            x, y, z = self.final_pose
+            return f'ok @ ({x:.3f}, {y:.3f}, {z:.3f})'
+        return f'FAILED [{self.stage}]: {self.error}'
 
 
 def build_config_dict():
@@ -121,17 +149,46 @@ def shutdown():
     rclpy.shutdown()
 
 
+def read_end_effector_xyz(robot, logger):
+    """
+    Read where the end effector actually is, from the live current state.
+
+    Forward kinematics on the robot's current state, not an echo of the goal.
+    The two diverge in exactly the cases a caller would want to react to - a
+    clamped target, drift, a partially executed motion - so echoing the request
+    would defeat the purpose of reporting a pose at all.
+
+    Returns None on failure. A diagnostic must never be able to turn a
+    successful motion into a reported failure.
+    """
+    try:
+        state = robot.get_planning_component(ARM_GROUP).get_start_state()
+        transform = state.get_global_link_transform(END_EFFECTOR_LINK)
+        # A 4x4 homogeneous transform; the translation is its last column.
+        return (
+            float(transform[0][3]),
+            float(transform[1][3]),
+            float(transform[2][3]),
+        )
+    except Exception as error:
+        logger.warn(f'could not read live end-effector pose: {error}')
+        return None
+
+
 def plan_and_execute(robot, arm, logger, params):
-    """Plan to whatever goal is already set, then execute it."""
+    """Plan to whatever goal is already set, execute it, and report back."""
     try:
         result = arm.plan(single_plan_parameters=params)
     except Exception as error:
         logger.error(f'Planning raised: {error}')
-        return False
+        return MoveResult(ok=False, stage='plan_failed', error=str(error))
 
     if not result:
         logger.error('Planning FAILED.')
-        return False
+        return MoveResult(
+            ok=False, stage='plan_failed',
+            error='planner returned no trajectory',
+        )
 
     logger.info('Planning succeeded, executing...')
     try:
@@ -140,20 +197,29 @@ def plan_and_execute(robot, arm, logger, params):
         robot.execute(result.trajectory, controllers=[])
     except Exception as error:
         logger.error(f'Execution raised: {error}')
-        return False
+        time.sleep(MOTION_SETTLE)
+        return MoveResult(
+            ok=False, stage='exec_error', error=str(error),
+            final_pose=read_end_effector_xyz(robot, logger),
+        )
 
+    # Sampled after the settle, so this is the resting pose rather than a
+    # point somewhere mid-motion.
     time.sleep(MOTION_SETTLE)
-    return True
+    return MoveResult(
+        ok=True, stage='executed',
+        final_pose=read_end_effector_xyz(robot, logger),
+    )
 
 
 def move_to_named(robot, arm, logger, params, name):
-    """Move to a pose named in the SRDF. Joint-space, so no IK is involved."""
+    """Move to an SRDF pose. Joint-space, so no IK is involved."""
     logger.info(f'=== move_to_named({name!r}) ===')
     arm.set_start_state_to_current_state()
     arm.set_goal_state(configuration_name=name)
-    ok = plan_and_execute(robot, arm, logger, params)
-    logger.info(f'move_to_named({name!r}) -> {"ok" if ok else "FAILED"}')
-    return ok
+    result = plan_and_execute(robot, arm, logger, params)
+    logger.info(f'move_to_named({name!r}) -> {result}')
+    return result
 
 
 def move_to_pose(robot, arm, logger, params, x, y, z):
@@ -169,9 +235,9 @@ def move_to_pose(robot, arm, logger, params, x, y, z):
 
     arm.set_start_state_to_current_state()
     arm.set_goal_state(pose_stamped_msg=pose, pose_link=END_EFFECTOR_LINK)
-    ok = plan_and_execute(robot, arm, logger, params)
-    logger.info(f'move_to_pose -> {"ok" if ok else "FAILED"}')
-    return ok
+    result = plan_and_execute(robot, arm, logger, params)
+    logger.info(f'move_to_pose -> {result}')
+    return result
 
 
 def main():
