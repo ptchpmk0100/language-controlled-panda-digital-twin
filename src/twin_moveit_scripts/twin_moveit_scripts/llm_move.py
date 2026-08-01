@@ -163,7 +163,8 @@ def clamp_pose(args, logger):
     return clamped
 
 
-def handle_instruction(text, robot, arm, logger, params, lock, source='repl'):
+def handle_instruction(text, robot, arm, logger, params, twin, lock,
+                       source='repl'):
     """
     Translate one instruction and drive the arm with it.
 
@@ -178,6 +179,9 @@ def handle_instruction(text, robot, arm, logger, params, lock, source='repl'):
 
     Returns the primitive's MoveResult, or None if no motion ran, so a caller
     can react to the outcome rather than reading the log.
+
+    `twin` is carried but unused: it is the handle a future gripper verb will
+    need, threaded through now so adding that verb touches only the dispatch.
     """
     text = text.strip()
     if not text:
@@ -215,12 +219,13 @@ def handle_instruction(text, robot, arm, logger, params, lock, source='repl'):
 class VoiceCommandNode(Node):
     """Route each /voice_command String through the shared dispatch."""
 
-    def __init__(self, robot, arm, logger, params, lock):
+    def __init__(self, robot, arm, logger, params, twin, lock):
         super().__init__('llm_move_sub')
         self._robot = robot
         self._arm = arm
         self._logger = logger
         self._params = params
+        self._twin = twin
         self._lock = lock
         self.create_subscription(String, '/voice_command', self._on_message, 10)
         logger.info('Subscribed to /voice_command (std_msgs/String).')
@@ -228,14 +233,14 @@ class VoiceCommandNode(Node):
     def _on_message(self, msg):
         handle_instruction(
             msg.data, self._robot, self._arm, self._logger, self._params,
-            self._lock, source='topic',
+            self._twin, self._lock, source='topic',
         )
 
 
-def start_topic_path(robot, arm, logger, params, lock):
+def start_topic_path(robot, arm, logger, params, twin, lock):
     """Spin a subscriber node in the background, or report why it could not."""
     try:
-        node = VoiceCommandNode(robot, arm, logger, params, lock)
+        node = VoiceCommandNode(robot, arm, logger, params, twin, lock)
         executor = SingleThreadedExecutor()
         executor.add_node(node)
 
@@ -261,10 +266,12 @@ def start_topic_path(robot, arm, logger, params, lock):
 
 
 def main():
-    robot, arm, logger, params = setup(node_name='llm_move')
+    robot, arm, logger, params, twin = setup(node_name='llm_move')
 
     lock = threading.Lock()
-    executor, sub_node = start_topic_path(robot, arm, logger, params, lock)
+    executor, sub_node = start_topic_path(
+        robot, arm, logger, params, twin, lock
+    )
 
     logger.info(
         "LLM control ready. Type an instruction (Ctrl-D or 'quit' to exit). "
@@ -280,7 +287,8 @@ def main():
             if text.strip().lower() in ('quit', 'exit'):
                 break
             handle_instruction(
-                text, robot, arm, logger, params, lock, source='repl'
+                text, robot, arm, logger, params, twin, lock,
+                source='repl',
             )
     finally:
         logger.info('Shutting down.')
@@ -288,7 +296,7 @@ def main():
             executor.shutdown()
         if sub_node is not None:
             sub_node.destroy_node()
-        shutdown()
+        shutdown(twin)
 
 
 if __name__ == '__main__':
