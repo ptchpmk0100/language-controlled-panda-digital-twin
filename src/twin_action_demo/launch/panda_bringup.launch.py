@@ -135,6 +135,13 @@ def generate_launch_description():
         )
     )
 
+    gripper_controller_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['gripper_controller'],
+        output='screen',
+    )
+
     arm_controller_after_broadcaster = RegisterEventHandler(
         OnProcessExit(
             target_action=joint_state_broadcaster_spawner,
@@ -142,16 +149,21 @@ def generate_launch_description():
         )
     )
 
-    # Supplies the two finger joints, which are in the URDF but not in
-    # <ros2_control>, so the broadcaster never reports them. Without it
-    # move_group's planning-scene monitor never has a complete robot state and
-    # refuses to plan. No controller dependency, so it starts immediately.
-    finger_state_publisher = Node(
-        package='twin_action_demo',
-        executable='finger_state_publisher',
-        parameters=[{'use_sim_time': True}],
-        output='screen',
+    gripper_controller_after_broadcaster = RegisterEventHandler(
+        OnProcessExit(
+            target_action=joint_state_broadcaster_spawner,
+            on_exit=[gripper_controller_spawner],
+        )
     )
+
+    # finger_state_publisher is deliberately NOT started any more. It existed
+    # only because the fingers had no command interface, so the broadcaster
+    # never reported them and move_group's scene monitor blocked on an
+    # incomplete robot. Now that the finger joint is in <ros2_control>, the
+    # broadcaster reports it with real values - and the stub would be a second
+    # publisher of the same joint, asserting a fixed 0.02 m against whatever
+    # the finger is actually doing. A placeholder must not outlive the signal
+    # it stood in for.
 
     # Included rather than duplicated, so the bridge stays independently
     # launchable and there is only one copy of its configuration.
@@ -176,6 +188,6 @@ def generate_launch_description():
         spawn,
         broadcaster_after_spawn,
         arm_controller_after_broadcaster,
-        finger_state_publisher,
+        gripper_controller_after_broadcaster,
         bridge,
     ])
