@@ -4,13 +4,15 @@ An incremental ROS 2 robotics project whose end goal is a simulation-only
 Franka Panda manipulator that executes validated natural-language
 pick-and-place commands in Gazebo.
 
-> **Current status:** a trajectory-controlled simulated arm with a planning
-> configuration, but no planning yet. One launch command brings up Gazebo, the
-> 7-DOF Panda, and the ROS 2 control stack on simulation time, with a
-> `JointTrajectoryController` exposing the `FollowJointTrajectory` action MoveIt
-> executes through. A MoveIt configuration package exists and loads, but
-> `move_group` has not been run against the simulator, so nothing plans, and there
-> is no perception or language-model integration.
+> **Current status:** typed English moves the arm. A local language model turns
+> an instruction into a schema-constrained tool call, a clamp bounds it, MoveIt
+> plans it, and a `JointTrajectoryController` executes it on a 7-DOF Panda in
+> Gazebo. The gripper is actuated and reports whether a grasp caught anything.
+>
+> Not yet: pick and place. The gripper cannot reopen once closed
+> ([Step 16](docs/learning/step-16-gripper-primitive.md)), nothing composes the
+> primitives into a task, and there is no perception — objects cannot be referred
+> to by name.
 
 ## Milestones
 
@@ -25,10 +27,43 @@ pick-and-place commands in Gazebo.
 | 7 | Rearchitected onto `ros2_control`, the interface MoveIt expects | [Step 7](docs/learning/step-07-ros2-control.md) |
 | 8 | Simulation time, and a controller that accepts timed trajectories | [Step 8](docs/learning/step-08-sim-time-and-trajectories.md) |
 | 9 | The planning layer: MoveIt configuration wired to the real controller | [Step 9](docs/learning/step-09-moveit-config.md) |
+| 10 | MoveIt plans against the live simulator and the arm moves | [Step 10](docs/learning/step-10-moveit-execution.md) |
+| 11 | Callable motion primitives, including a Cartesian goal solved with IK | [Step 11](docs/learning/step-11-scripted-motion.md) |
+| 12 | Natural language drives the arm, with a clamp between model and robot | [Step 12](docs/learning/step-12-llm-control.md) |
+| 13 | A ROS topic as a second input path, sharing one dispatch | [Step 13](docs/learning/step-13-topic-input.md) |
+| 14 | Primitives report a typed result carrying the measured pose | [Step 14](docs/learning/step-14-move-results.md) |
+| 15 | The gripper becomes an actuated joint | [Step 15](docs/learning/step-15-gripper-actuation.md) |
+| 16 | A gripper primitive reporting the grasp-success signal | [Step 16](docs/learning/step-16-gripper-primitive.md) |
 
 The one-joint arm is a deliberate stand-in. Steps 2 and 3 proved the
 description → physics → bridge → action pipeline on the smallest robot that could
 exercise it; Steps 4 onward point that same pipeline at the real arm.
+
+## Step 12: Language to motion
+
+```text
+"move to x 0.3 y -0.2 z 5.0"
+  → local LLM, decoding constrained to a JSON schema
+  → {"action": "move_to_pose", "args": {"x": 0.3, "y": -0.2, "z": 5.0}}
+  → clamp against the reachable box  →  z becomes 0.9
+  → MoveIt plans, arm_controller executes
+```
+
+The schema is what makes the model's output always parseable, and the clamp is
+what makes its values safe — a schema constrains shape, never magnitude. A
+request for a point five metres in the air left the end effector at 0.9006 m.
+Instructions arrive either from a prompt or from `/voice_command`, through one
+shared dispatch. See [Step 12](docs/learning/step-12-llm-control.md) and
+[Step 13](docs/learning/step-13-topic-input.md).
+
+## Step 11: Callable primitives
+
+`move_to_named(name)` takes an SRDF pose in joint space; `move_to_pose(x, y, z)`
+takes a Cartesian point and solves it with IK. Both return a `MoveResult`
+carrying the **measured** end-effector position, read by forward kinematics on
+the live state rather than echoed from the goal — the two diverge in exactly the
+cases worth reacting to. See [Step 11](docs/learning/step-11-scripted-motion.md)
+and [Step 14](docs/learning/step-14-move-results.md).
 
 ## Step 9: The planning layer
 
@@ -205,7 +240,9 @@ planned system and acceptance criteria are in
   Panda's meshes
 - `ros-jazzy-gz-ros2-control`, `ros-jazzy-ros2-controllers`, and
   `ros-jazzy-robot-state-publisher` — required from Step 7
-- `ros-jazzy-moveit` — required from Step 9, for the planning configuration
+- `ros-jazzy-moveit` and `ros-jazzy-moveit-py` — required from Step 9
+- [Ollama](https://ollama.com) with `qwen2.5:3b-instruct` — required from
+  Step 12, for the language layer
 
 Gazebo is installed through ROS `-vendor` packages, which place it inside the ROS
 tree rather than on the system `PATH`. Sourcing ROS does **not** configure it. A
@@ -288,6 +325,32 @@ Confirm the simulator's clock is reaching ROS — everything runs on sim time, s
 ros2 topic info /clock       # Publisher count: 1
 ```
 
+### Natural language (Steps 12-16)
+
+With the bringup up and Ollama running:
+
+```bash
+ros2 run twin_moveit_scripts llm_move
+cmd> go to the ready position
+cmd> move to x 0.3 y -0.2 z 0.5
+```
+
+or from another terminal:
+
+```bash
+ros2 topic pub --once /voice_command std_msgs/String "data: 'go home'"
+```
+
+The primitives are also callable directly, which bypasses the clamp:
+
+```bash
+ros2 run twin_moveit_scripts move_to named ready
+ros2 run twin_moveit_scripts move_to pose 0.4 0.0 0.4
+ros2 run twin_moveit_scripts move_to grip 0.0        # close
+```
+
+### Lower-level control
+
 Command the arm with a **timed trajectory**, and read the result back by joint
 name:
 
@@ -351,16 +414,30 @@ the joint more or less directly rather than through a force-producing loop.
 Nothing has been tested against contact or payload, and this should be confirmed
 before treating the simulation as physically faithful.
 
-**Nothing plans.** A trajectory still has to be written out by hand, waypoint by
-waypoint. The MoveIt configuration exists and loads, but `move_group` has never
-been run against the simulator, so there is no inverse kinematics, no collision
-checking, and no Cartesian goal. The seam between MoveIt and the controller is
-verified by configuration rather than by a trajectory arriving.
+**The gripper cannot reopen once closed.** Verified across two cycles: the finger
+does not move, and the controller reports the failure as a stall — which the
+primitive renders as a successful grasp of nothing. This blocks any pick or place
+sequence and is the most significant open defect. See
+[Step 16](docs/learning/step-16-gripper-primitive.md).
+
+**Nothing composes the primitives into a task.** `pick` and `place` do not exist;
+approach, grasp and lift have only been performed by hand.
+
+**No perception.** Objects cannot be referred to by name, so a target is either a
+named pose or three literal numbers.
 
 **Trajectory interpolation is unverified.** A timed goal is accepted and reached,
 but sampling the motion mid-flight failed: the probe written for it runs on
 wall-clock while the stack runs on sim time. A gap in the testing, not a known
 fault.
+
+**Planner parameters silently fall back to defaults.** Every plan logs that the
+configuration for `panda_arm` with `RRTConnect` cannot be found, so the velocity
+and acceleration scaling set in code may never apply. Planning succeeds, which is
+how the misconfiguration stays hidden.
+
+**Clamping hides intent.** An unreachable request is moved to the nearest
+reachable point and executed, with only a log line to say so.
 
 **Two components are superseded but still present.** The `ros_gz` bridge still
 starts and maps topics that no longer exist under `ros2_control`, and the `MoveArm`
@@ -412,7 +489,8 @@ it.
     ├── twin_interfaces/     MoveJoint and MoveArm action definitions
     ├── twin_action_demo/    action servers, client, launch files, bridge config
     ├── twin_description/    URDF models and the controllers YAML
-    └── twin_moveit_config/  SRDF, kinematics, and the MoveIt execution seam
+    ├── twin_moveit_config/  SRDF, kinematics, and the MoveIt execution seam
+    └── twin_moveit_scripts/ motion primitives and the language layer
 ```
 
 `twin_description` holds data and stays launch-free; everything that starts a
