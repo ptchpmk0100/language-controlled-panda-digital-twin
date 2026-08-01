@@ -9,16 +9,28 @@ The primitives are imported rather than invoked as subprocesses, so the whole
 program shares one MoveItPy context. Building a context per command would pay
 the construction cost and the action-client settle every time.
 
+Two input paths, one dispatch:
+
     ros2 run twin_moveit_scripts llm_move
     cmd> go to the ready position
-    cmd> move to x 0.3 y -0.2 z 0.5
-    cmd> quit
+
+    ros2 topic pub --once /voice_command std_msgs/String "data: 'go home'"
+
+The REPL blocks the main thread on input(), so the subscriber gets its own node
+spun in a background thread. A lock serializes the motion itself, because both
+paths drive the same MoveIt context.
 
 Requires the Gazebo bringup and a running Ollama.
 """
 
 import json
+import threading
 import urllib.request
+
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.node import Node
+
+from std_msgs.msg import String
 
 from twin_moveit_scripts.move_to import (
     move_to_named,
@@ -151,8 +163,19 @@ def clamp_pose(args, logger):
     return clamped
 
 
-def handle_instruction(text, robot, arm, logger, params):
-    """Translate one instruction and drive the arm with it."""
+def handle_instruction(text, robot, arm, logger, params, lock, source='repl'):
+    """
+    Translate one instruction and drive the arm with it.
+
+    Both input paths call this, so there is one translate-clamp-dispatch path
+    rather than two that can drift apart. `source` tags the logs so it is
+    visible which path drove a motion.
+
+    The lock serializes the motion, not the translation: a second instruction
+    arriving mid-move waits its turn rather than being dropped, which matches
+    how the prompt already behaved. Two instructions can never drive the single
+    MoveIt context at once.
+    """
     text = text.strip()
     if not text:
         return
@@ -160,27 +183,82 @@ def handle_instruction(text, robot, arm, logger, params):
     try:
         call = query_llm(text)
     except Exception as error:
-        logger.error(f'LLM query failed: {error}')
+        logger.error(f'[{source}] LLM query failed: {error}')
         return
 
     action = call.get('action')
     args = call.get('args', {})
-    logger.info(f'LLM -> {action} {args}')
+    logger.info(f'[{source}] LLM -> {action} {args}')
 
-    if action == 'move_to_named':
-        move_to_named(robot, arm, logger, params, args['name'])
-    elif action == 'move_to_pose':
-        safe = clamp_pose(args, logger)
-        move_to_pose(robot, arm, logger, params, safe['x'], safe['y'], safe['z'])
-    else:
-        logger.error(f'unknown action: {action}')
+    with lock:
+        if action == 'move_to_named':
+            move_to_named(robot, arm, logger, params, args['name'])
+        elif action == 'move_to_pose':
+            safe = clamp_pose(args, logger)
+            move_to_pose(
+                robot, arm, logger, params, safe['x'], safe['y'], safe['z']
+            )
+        else:
+            logger.error(f'[{source}] unknown action: {action}')
+
+
+class VoiceCommandNode(Node):
+    """Route each /voice_command String through the shared dispatch."""
+
+    def __init__(self, robot, arm, logger, params, lock):
+        super().__init__('llm_move_sub')
+        self._robot = robot
+        self._arm = arm
+        self._logger = logger
+        self._params = params
+        self._lock = lock
+        self.create_subscription(String, '/voice_command', self._on_message, 10)
+        logger.info('Subscribed to /voice_command (std_msgs/String).')
+
+    def _on_message(self, msg):
+        handle_instruction(
+            msg.data, self._robot, self._arm, self._logger, self._params,
+            self._lock, source='topic',
+        )
+
+
+def start_topic_path(robot, arm, logger, params, lock):
+    """Spin a subscriber node in the background, or report why it could not."""
+    try:
+        node = VoiceCommandNode(robot, arm, logger, params, lock)
+        executor = SingleThreadedExecutor()
+        executor.add_node(node)
+
+        def spin():
+            # A thread that raises simply vanishes - no traceback, and the main
+            # thread carries on looking healthy. The only symptom of losing this
+            # thread is a topic with no subscriber, which is a long way from the
+            # cause, so failures here are logged rather than swallowed.
+            try:
+                executor.spin()
+            except Exception as error:
+                logger.error(f'spin thread died: {error}')
+
+        threading.Thread(target=spin, daemon=True).start()
+        logger.info('Topic path started (spin thread live).')
+        return executor, node
+    except Exception as error:
+        logger.error(
+            f'could not start the /voice_command path: {error!r} '
+            '-- the prompt still works'
+        )
+        return None, None
 
 
 def main():
     robot, arm, logger, params = setup(node_name='llm_move')
 
+    lock = threading.Lock()
+    executor, sub_node = start_topic_path(robot, arm, logger, params, lock)
+
     logger.info(
-        "LLM control ready. Type an instruction (Ctrl-D or 'quit' to exit)."
+        "LLM control ready. Type an instruction (Ctrl-D or 'quit' to exit). "
+        'Also listening on /voice_command.'
     )
 
     try:
@@ -191,9 +269,15 @@ def main():
                 break
             if text.strip().lower() in ('quit', 'exit'):
                 break
-            handle_instruction(text, robot, arm, logger, params)
+            handle_instruction(
+                text, robot, arm, logger, params, lock, source='repl'
+            )
     finally:
         logger.info('Shutting down.')
+        if executor is not None:
+            executor.shutdown()
+        if sub_node is not None:
+            sub_node.destroy_node()
         shutdown()
 
 
