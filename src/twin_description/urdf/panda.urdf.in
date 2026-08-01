@@ -350,6 +350,20 @@
       <state_interface name="position"/>
       <state_interface name="velocity"/>
     </joint>
+
+    <!-- The gripper. Only joint1 is listed: joint2 carries a <mimic> of it in
+         the joint definition above, and gz_ros2_control follows that on its
+         own, so a second entry would be a competing owner of the same motion.
+
+         Until this interface existed the fingers were links, joints and a
+         mimic with nothing able to drive them - present in every description
+         and inert in the simulator. That one missing command_interface was
+         the entire gap. -->
+    <joint name="panda_finger_joint1">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
   </ros2_control>
 
   <!-- The RUNTIME that provides those interfaces: one Gazebo system plugin,

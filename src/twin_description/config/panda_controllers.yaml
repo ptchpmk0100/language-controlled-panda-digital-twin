@@ -31,6 +31,15 @@ controller_manager:
     arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
+    # An action controller rather than a trajectory controller, chosen for what
+    # it reports rather than what it commands. GripperCommand carries a target
+    # width and an effort ceiling, and the result says whether the fingers
+    # STALLED - closed until they hit something - or merely reached the
+    # commanded width. That distinction is the grasp-success signal: closing on
+    # an object and closing on air are otherwise identical.
+    gripper_controller:
+      type: position_controllers/GripperActionController
+
 # --- per-controller configuration ---
 # Still no PID gains. The trajectory controller interpolates between waypoints
 # and writes positions to the command interface; GazeboSimSystem closes the
@@ -55,3 +64,16 @@ arm_controller:
     state_interfaces:
       - position
       - velocity
+
+gripper_controller:
+  ros__parameters:
+    # Singular. GripperActionController takes one joint; the trajectory and
+    # group controllers take a `joints` list. A missing `joint` is the first
+    # thing to check when this controller will not activate.
+    joint: panda_finger_joint1
+
+    # Without this, a grasp that stalls on an object is reported as a failure -
+    # which is exactly backwards. Stalling is how a gripper succeeds.
+    allow_stalling: true
+    stall_velocity_threshold: 0.001
+    stall_timeout: 0.5
