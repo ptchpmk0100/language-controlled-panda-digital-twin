@@ -41,6 +41,8 @@ setup(
             'move_joint_server = twin_action_demo.move_joint_server:main',
             'move_joint_client = twin_action_demo.move_joint_client:main',
             'move_arm_server = twin_action_demo.move_arm_server:main',
+            'finger_state_publisher = '
+            'twin_action_demo.finger_state_publisher:main',
         ],
     },
 )

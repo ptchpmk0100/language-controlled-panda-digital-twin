@@ -142,6 +142,17 @@ def generate_launch_description():
         )
     )
 
+    # Supplies the two finger joints, which are in the URDF but not in
+    # <ros2_control>, so the broadcaster never reports them. Without it
+    # move_group's planning-scene monitor never has a complete robot state and
+    # refuses to plan. No controller dependency, so it starts immediately.
+    finger_state_publisher = Node(
+        package='twin_action_demo',
+        executable='finger_state_publisher',
+        parameters=[{'use_sim_time': True}],
+        output='screen',
+    )
+
     # Included rather than duplicated, so the bridge stays independently
     # launchable and there is only one copy of its configuration.
     bridge = IncludeLaunchDescription(
@@ -165,5 +176,6 @@ def generate_launch_description():
         spawn,
         broadcaster_after_spawn,
         arm_controller_after_broadcaster,
+        finger_state_publisher,
         bridge,
     ])
